@@ -2,6 +2,13 @@
 Implementation of hierarchical softmax based on Huffman tree
 
 ## Usage
+Run the script as follows:  
+```
+python wenet/utils/huffman_tree.py \
+--train-data ../egs/aishell/s1/fbank/train_sp/format.data \
+--dict ../egs/aishell/s1/data/dict/lang_char.txt \
+--tree-save-dir ../egs/aishell/s1/data/dict/tree
+```
 Add the following lines to train and test yaml files
 ```
 hsoftmax:
