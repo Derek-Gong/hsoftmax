@@ -2,7 +2,7 @@
 Implementation of hierarchical softmax based on Huffman tree
 
 ## Usage
-Add the following lines to trian and test yaml files
+Add the following lines to train and test yaml files
 ```
 hsoftmax:
     huffman_tree_dir: "dir/to/save"
