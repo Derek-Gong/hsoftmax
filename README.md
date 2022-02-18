@@ -27,4 +27,4 @@ wenet/utils/multiprocessing.py: Helper classes included for parallel decoding in
 wenet/transformer/asr_model.py: Several lines are added to enable hsoftmax  
 
 ## Implementation Details
-![Implementation Details](implementation details.jpg)
+![Implementation Details](implementation_details.jpg)
