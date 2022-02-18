@@ -25,3 +25,6 @@ wenet/utils/huffman_tree.py: For building a Huffman tree based on frequencies of
 wenet/transformer/hsoftmax_layer.py: For GPU training and CPU decoding  
 wenet/utils/multiprocessing.py: Helper classes included for parallel decoding in hsoftmax_layer.py  
 wenet/transformer/asr_model.py: Several lines are added to enable hsoftmax  
+
+## Implementation Details
+![Implementation Details](implementation details.jpg)
