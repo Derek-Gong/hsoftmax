@@ -38,8 +38,10 @@ from wenet.utils.huffman_tree import HuffmanTree
 
 import time
 
+
 class ASRModel(torch.nn.Module):
     """CTC-attention hybrid Encoder-Decoder model"""
+
     def __init__(
         self,
         vocab_size: int,
@@ -82,7 +84,7 @@ class ASRModel(torch.nn.Module):
         text: torch.Tensor,
         text_lengths: torch.Tensor,
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor],
-               Optional[torch.Tensor]]:
+               Optional[torch.Tensor], Optional[float]]:
         """Frontend + Encoder + Decoder + Calc loss
 
         Args:
@@ -105,7 +107,7 @@ class ASRModel(torch.nn.Module):
             loss_att, acc_att = self._calc_att_loss(encoder_out, encoder_mask,
                                                     text, text_lengths)
         else:
-            loss_att = None
+            loss_att, acc_att = None, None
 
         # 2b. CTC branch
         if self.ctc_weight != 0.0:
@@ -121,7 +123,7 @@ class ASRModel(torch.nn.Module):
         else:
             loss = self.ctc_weight * loss_ctc + (1 -
                                                  self.ctc_weight) * loss_att
-        return loss, loss_att, loss_ctc
+        return loss, loss_att, loss_ctc, acc_att
 
     def _calc_att_loss(
         self,
@@ -144,7 +146,8 @@ class ASRModel(torch.nn.Module):
                                                      r_ys_in_pad,
                                                      self.reverse_weight)
         if self.hsoftmax is not None:
-            decoder_out = self.hsoftmax(decoder_out) # input attention, output log probabilities
+            # input attention, output log probabilities
+            decoder_out = self.hsoftmax(decoder_out)
         # 2. Compute attention loss
         loss_att = self.criterion_att(decoder_out, ys_out_pad)
         r_loss_att = torch.tensor(0.0)
@@ -239,7 +242,7 @@ class ASRModel(torch.nn.Module):
         end_flag = torch.zeros_like(scores, dtype=torch.bool, device=device)
         cache: Optional[List[torch.Tensor]] = None
         # 2. Decoder forward step by step
-        print(batch_size, beam_size)
+        # print(batch_size, beam_size)
         from tqdm import tqdm
         tlen = tqdm(range(1, maxlen + 1), unit="token len")
         for i in tlen:
@@ -257,8 +260,10 @@ class ASRModel(torch.nn.Module):
             # 2.2 First beam prune: select topk best prob at current time
             if self.hsoftmax is not None:
                 # s = time.time()
-                top_k_logp, top_k_index = self.hsoftmax.beam_search(logp, beam_size)
-                top_k_logp, top_k_index = top_k_logp.to(device), top_k_index.to(device)
+                top_k_logp, top_k_index = self.hsoftmax.beam_search(
+                    logp, beam_size)
+                top_k_logp, top_k_index = top_k_logp.to(
+                    device), top_k_index.to(device)
                 # print('hsoftmax', time.time()-s)
             else:
                 top_k_logp, top_k_index = logp.topk(beam_size)  # (B*N, N)
@@ -722,12 +727,12 @@ def init_asr_model(configs):
                                      **configs['encoder_conf'])
     if decoder_type == 'transformer':
         if 'hsoftmax' in configs:
-            configs['decoder_conf']['use_output_layer']=False
+            configs['decoder_conf']['use_output_layer'] = False
             tree = HuffmanTree.load(configs['hsoftmax']['huffman_tree_dir'])
-            hsoftmax = HSoftmaxLayer(vocab_size, 
-                                    encoder.output_size(), 
-                                    tree, 
-                                    configs['hsoftmax']['num_workers'])
+            hsoftmax = HSoftmaxLayer(vocab_size,
+                                     encoder.output_size(),
+                                     tree,
+                                     configs['hsoftmax']['num_workers'])
 
         decoder = TransformerDecoder(vocab_size, encoder.output_size(),
                                      **configs['decoder_conf'])

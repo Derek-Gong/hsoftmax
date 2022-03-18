@@ -22,21 +22,24 @@ class HSoftmaxLayer(nn.Module):
         self.tree = tree
         self.inner_vector = nn.Linear(attention_dim, tree.inner_cnt, False)
         self.register_buffer(
-            'path_mask_sign', torch.Tensor(tree.path_mask_sign))
+            'path_mask_sign', torch.CharTensor(tree.path_mask_sign).to_sparse())
         self.register_buffer(
-            'path_mask_bias', torch.Tensor(tree.path_mask_bias))
+            'path_mask_bias', torch.CharTensor(tree.path_mask_bias).to_sparse())
 
         self.num_workers = mp.cpu_count() if num_workers is None else num_workers
         self.pool = None
         self.queue = None
 
     def forward(self, att: torch.Tensor):
+        # start = time.time()
         h = self.inner_vector(att)
         h = torch.sigmoid(h)
-        # h.size = [inner_cnt], path_mask.size = [vocab_size, inner_cnt]
+        h = h.unsqueeze(-2)
+        # h.size = [batch, length, 1, inner_cnt], path_mask.size = [vocab_size, inner_cnt]
         H = h * self.path_mask_sign
-        # H.size = [vocab_size, inner_cnt]
+        # H.size = [batch, length, vocab_size, inner_cnt]
         H = H + self.path_mask_bias
+        # print('forward: ', time.time()-start)
         return torch.sum(torch.log(H), -1)
 
     def beam_search(self, att: torch.Tensor, beam_size: int) -> List[List[int]]:

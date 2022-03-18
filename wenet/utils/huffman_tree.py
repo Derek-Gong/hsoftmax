@@ -1,10 +1,13 @@
 import os
+from pathlib import Path
 import argparse
+import logging
 import json
 import codecs
 import numpy as np
 from collections import Counter
 from queue import PriorityQueue
+
 
 class Node:
     class NodeEncoder(json.JSONEncoder):
@@ -20,11 +23,11 @@ class Node:
         self.idx = None
         self.left = None
         self.right = None
-    
+
     def __lt__(self, other):
         return self.freq < other.freq
 
-    def build_idx(self, token_id, nxt = 0):
+    def build_idx(self, token_id, nxt=0):
         if self.token is not None:
             self.idx = token_id[self.token]
             return nxt
@@ -51,10 +54,11 @@ class Node:
                 node.left = as_Node(dct['left'])
             if dct['right'] is not None:
                 node.right = as_Node(dct['right'])
-            return node       
+            return node
 
         return json.loads(json_string, object_hook=as_Node)
-            
+
+
 class HuffmanTree:
     def __init__(self, counter, token_id):
         self.token_id = token_id
@@ -77,24 +81,25 @@ class HuffmanTree:
             freq = cnt / tot_cnt
             node = Node(freq, token)
             q.put(node)
-        
+
         while q.qsize() > 1:
             left, right = q.get(), q.get()
             parent = Node(left.freq + right.freq, None)
             parent.left, parent.right = left, right
             q.put(parent)
-        
+
         self.root = q.get()
 
     @staticmethod
     def load(save_dir):
         def load_string(filename):
             path_name = os.path.join(save_dir, filename)
-            with codecs.open(path_name,"r", encoding='utf-8') as jsonfile:
+            with codecs.open(path_name, "r", encoding='utf-8') as jsonfile:
                 return jsonfile.read()
+
         def loadnp(filename):
             path_name = os.path.join(save_dir, filename)
-            with open(path_name,"rb") as f:
+            with open(path_name, "rb") as f:
                 return np.load(f)
         tree = HuffmanTree(None, None)
         # load struct from json
@@ -107,17 +112,20 @@ class HuffmanTree:
         tree.info_dict = json.loads(load_string('tree_info'))
         tree.leaf_cnt = tree.info_dict['leaf_cnt']
         tree.inner_cnt = tree.leaf_cnt - 1
-        
+
         return tree
 
     def save(self, save_dir):
+        Path(save_dir).mkdir(parents=True, exist_ok=True)
+
         def save2js(filename, js):
             path_name = os.path.join(save_dir, filename)
-            with codecs.open(path_name,"w", encoding='utf-8') as jsonfile:
+            with codecs.open(path_name, "w", encoding='utf-8') as jsonfile:
                 jsonfile.write(js)
+
         def save2np(filename, data):
             path_name = os.path.join(save_dir, filename)
-            with open(path_name,"wb") as f:
+            with open(path_name, "wb") as f:
                 np.save(f, data)
         # save struct in json
         save2js('tree_struct', self.toJSON())
@@ -126,7 +134,7 @@ class HuffmanTree:
         # save path_mask_bias in npy
         save2np('path_mask_bias.npy', self.path_mask_bias)
         # save info in string
-        save2js('tree_info',  json.dumps(self.info()))
+        save2js('tree_info', json.dumps(self.info()))
 
     def toJSON(self):
         return self.root.toJSON()
@@ -136,13 +144,15 @@ class HuffmanTree:
         self.info()
         self.leaf_cnt = self.info_dict['leaf_cnt']
         self.inner_cnt = self.leaf_cnt - 1
-        
-        self.path_mask_sign = np.zeros((self.leaf_cnt, self.inner_cnt), dtype=int)
-        self.path_mask_bias = np.ones((self.leaf_cnt, self.inner_cnt), dtype=int)
 
-        def dfs(node, 
-            sign = np.zeros((self.inner_cnt,), dtype=int), 
-            bias = np.ones((self.inner_cnt,), dtype=int)):
+        self.path_mask_sign = np.zeros(
+            (self.leaf_cnt, self.inner_cnt), dtype=int)
+        self.path_mask_bias = np.ones(
+            (self.leaf_cnt, self.inner_cnt), dtype=int)
+
+        def dfs(node,
+                sign=np.zeros((self.inner_cnt,), dtype=int),
+                bias=np.ones((self.inner_cnt,), dtype=int)):
             # node is leaf
             if node.left is None and node.right is None:
                 self.path_mask_sign[token_id[node.token]] = sign
@@ -158,7 +168,7 @@ class HuffmanTree:
                 sign[node.idx] = -1
                 dfs(node.right, sign, bias)
                 sign[node.idx] = 0
-        
+
         dfs(self.root)
 
     def info(self):
@@ -171,6 +181,7 @@ class HuffmanTree:
             if node.right is not None:
                 right = depth(node.right)
             return 1 + max(left, right)
+
         def cnt_leaf(node):
             if node is None:
                 return 0
@@ -180,43 +191,52 @@ class HuffmanTree:
             if node.right is not None:
                 right = cnt_leaf(node.right)
             return (left + right) or 1
-        
+
         if self.info_dict is None:
-            self.info_dict = {'depth': depth(self.root), 'leaf_cnt': cnt_leaf(self.root)}
+            self.info_dict = {'depth': depth(
+                self.root), 'leaf_cnt': cnt_leaf(self.root)}
         return self.info_dict
+
 
 def build_huffman_tree(data_file, dict_file, save_dir):
     token_counter = Counter()
     line_cnt = 0
     with codecs.open(data_file, 'r', encoding='utf-8') as f:
         for line in f:
-            line_cnt = line_cnt + 1
-            arr = line.strip().split('\t')
+            try:
+                arr = line.strip().split('\t')
 
-            token_seq=arr[4].split(':')[1]
-            
-            tokens=token_seq.split( )
-            
-            for token in tokens:
-                token_counter[token] += 1
-    
+                token_seq = arr[4].split(':')[1]
+
+                tokens = token_seq.split()
+
+                line_cnt = line_cnt + 1
+
+                for token in tokens:
+                    token_counter[token] += 1
+            except:
+                logging.warning('Omit an ill-formed line: ' + line.strip())
+
     token_counter["<sos/eos>"] = line_cnt
 
-    token_id = {} 
+    token_id = {}
     with codecs.open(dict_file, 'r', encoding='utf-8') as f:
         for line in f:
             token, idx = line.strip().split()
-            token_id[token]=int(idx)
+            token_id[token] = int(idx)
             if token not in token_counter:
                 token_counter[token] = 0
-    
+
     tree = HuffmanTree(token_counter, token_id)
     tree.save(save_dir)
 
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='build huffman tree on train set')
+    parser = argparse.ArgumentParser(
+        description='build huffman tree on train set')
     parser.add_argument('--train-data', required=True, help='train data file')
     parser.add_argument('--dict', required=True, help='token to id mapping')
-    parser.add_argument('--tree-save-dir', required=True, help='token to id mapping')
+    parser.add_argument('--tree-save-dir', required=True,
+                        help='token to id mapping')
     args = parser.parse_args()
     build_huffman_tree(args.train_data, args.dict, args.tree_save_dir)

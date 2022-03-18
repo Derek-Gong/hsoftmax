@@ -9,6 +9,7 @@ import torch
 from torch.nn.utils import clip_grad_norm_
 from tqdm import tqdm
 
+
 class Executor:
     def __init__(self):
         self.step = 0
@@ -33,24 +34,25 @@ class Executor:
             assert scaler is not None
         num_seen_utts = 0
         num_total_batch = len(data_loader)
-        
+
         if self.train_batch_cache is None:
             tepoch = tqdm(data_loader, unit="batch")
             self.train_batch_cache = []
         else:
             tepoch = tqdm(self.train_batch_cache, unit="batch")
         for batch_idx, batch in enumerate(tepoch):
-        # for batch_idx, batch in enumerate(data_loader):
+            # for batch_idx, batch in enumerate(data_loader):
             key, feats, target, feats_lengths, target_lengths = batch
             # cache gpu tensors
             if batch_idx >= len(self.train_batch_cache):
                 feats = feats.to(device)
                 # ys_in_pad, ys_out_pad = target
-                # target = target.to(device)
-                target = tuple(t.to(device) for t in target)
+                target = target.to(device)
+                # target = tuple(t.to(device) for t in target)
                 feats_lengths = feats_lengths.to(device)
                 target_lengths = target_lengths.to(device)
-                self.train_batch_cache.append([key, feats, target, feats_lengths, target_lengths])
+                self.train_batch_cache.append(
+                    [key, feats, target, feats_lengths, target_lengths])
 
             num_utts = target_lengths.size(0)
             if num_utts == 0:
@@ -71,7 +73,7 @@ class Executor:
                 # https://pytorch.org/docs/stable/notes/amp_examples.html
                 with torch.cuda.amp.autocast(scaler is not None):
                     loss, loss_att, loss_ctc, acc = model(feats, feats_lengths,
-                                                     target, target_lengths)
+                                                          target, target_lengths)
                     loss = loss / accum_grad
                 if use_amp:
                     scaler.scale(loss).backward()
@@ -117,7 +119,6 @@ class Executor:
                     log_str += 'loss_ctc {:.6f} '.format(loss_ctc.item())
                 log_str += 'lr {:.8f} rank {}'.format(lr, rank)
                 logging.debug(log_str)
-            
 
     def cv(self, model, data_loader, device, args):
         ''' Cross validation on
@@ -127,10 +128,10 @@ class Executor:
         # in order to avoid division by 0
         num_seen_utts = 1
         total_loss = 0.0
-        total_acc = 0.0 
+        total_acc = 0.0
         total_ppl = 0.0
         num_total_batch = len(data_loader)
-        
+
         if self.cv_batch_cache is None:
             tepoch = data_loader
             self.cv_batch_cache = []
@@ -142,22 +143,23 @@ class Executor:
                 # cache gpu tensors
                 if batch_idx >= len(self.cv_batch_cache):
                     feats = feats.to(device)
-                    # target = target.to(device)
-                    target = tuple(t.to(device) for t in target)
+                    target = target.to(device)
+                    # target = tuple(t.to(device) for t in target)
                     feats_lengths = feats_lengths.to(device)
                     target_lengths = target_lengths.to(device)
-                    self.cv_batch_cache.append([key, feats, target, feats_lengths, target_lengths])
+                    self.cv_batch_cache.append(
+                        [key, feats, target, feats_lengths, target_lengths])
 
                 num_utts = target_lengths.size(0)
                 if num_utts == 0:
                     continue
                 loss, loss_att, loss_ctc, acc = model(feats, feats_lengths, target,
-                                                 target_lengths)
+                                                      target_lengths)
                 if torch.isfinite(loss):
                     num_seen_utts += num_utts
                     total_loss += loss.item() * num_utts
                     total_acc += acc * num_utts
-                    total_ppl += model.module.perplexity.item() * num_utts
+                    # total_ppl += model.module.perplexity.item() * num_utts
                 if batch_idx % log_interval == 0:
                     log_str = 'CV Batch {}/{} loss {:.6f} '.format(
                         batch_idx, num_total_batch, loss.item())
@@ -168,9 +170,9 @@ class Executor:
                     log_str += 'history loss {:.6f}'.format(total_loss /
                                                             num_seen_utts)
                     log_str += 'history acc {:.6f}'.format(total_acc /
-                                                            num_seen_utts)
-                    log_str += 'history ppl {:.6f}'.format(total_ppl /
-                                                            num_seen_utts)
+                                                           num_seen_utts)
+                    # log_str += 'history ppl {:.6f}'.format(total_ppl /
+                    #                                        num_seen_utts)
                     logging.debug(log_str)
 
         return total_loss, total_acc, total_ppl, num_seen_utts
