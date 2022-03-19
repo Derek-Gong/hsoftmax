@@ -53,6 +53,7 @@ class HSoftmaxLayer(nn.Module):
         super().__init__()
 
         self.vocab_size = vocab_size
+        self.attention_dim = attention_dim
         self.inner_vector = nn.Linear(attention_dim, tree.inner_cnt, False)
         self.tree = tree
         self.tree_depth = tree.depth
@@ -68,6 +69,9 @@ class HSoftmaxLayer(nn.Module):
         self.pool = None
         self.queue = None
 
+        self.search_emb = None
+        self.son_index = None
+
     def forward(self, att: torch.Tensor):
         # start = time.time()
         h = self.inner_vector(att)
@@ -80,6 +84,10 @@ class HSoftmaxLayer(nn.Module):
         H = h.view(h.size()[0], -1, self.vocab_size, self.tree_depth)
         # print('forward: ', time.time()-start)
         return torch.sum(torch.log(H), -1)
+
+    # def greedy_search(self, att: torch.Tensor) -> List[List[int]]:
+    #     if self.search_emb = None:
+    #         self.search_emb = torch.stack([self.inner_vector.weight, torch.zeros((self.vocab_size, self.tree.))])
 
     def beam_search(self, att: torch.Tensor, beam_size: int) -> List[List[int]]:
         if self.pool is None:

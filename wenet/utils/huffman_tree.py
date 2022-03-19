@@ -17,9 +17,9 @@ class Node:
             else:
                 return json.JSONEncoder.default(self, obj)
 
-    def __init__(self, freq, token):
+    def __init__(self, freq, tokenid):
         self.freq = freq
-        self.token = token
+        self.tokenid = tokenid
         self.idx = None
         self.left = None
         self.right = None
@@ -27,17 +27,17 @@ class Node:
     def __lt__(self, other):
         return self.freq < other.freq
 
-    def build_idx(self, token_id, nxt=0):
-        if self.token is not None:
-            self.idx = token_id[self.token]
+    def build_idx(self, nxt=0):
+        if self.tokenid is not None:
+            self.idx = self.tokenid
             return nxt
 
         self.idx = nxt
         nxt += 1
         if self.left is not None:
-            nxt = self.left.build_idx(token_id, nxt)
+            nxt = self.left.build_idx(nxt)
         if self.right is not None:
-            nxt = self.right.build_idx(token_id, nxt)
+            nxt = self.right.build_idx(nxt)
         return nxt
 
     def toJSON(self):
@@ -48,7 +48,7 @@ class Node:
         def as_Node(dct):
             if isinstance(dct, Node):
                 return dct
-            node = Node(dct['freq'], dct['token'])
+            node = Node(dct['freq'], dct['tokenid'])
             node.idx = dct['idx']
             if dct['left'] is not None:
                 node.left = as_Node(dct['left'])
@@ -60,8 +60,7 @@ class Node:
 
 
 class HuffmanTree:
-    def __init__(self, counter, token_id):
-        self.token_id = token_id
+    def __init__(self, counter):
         self.root = None
         self.path_mask_sign = None
         self.path_mask_bias = None
@@ -75,17 +74,15 @@ class HuffmanTree:
 
         if counter is not None:
             self.__build_tree(counter)
-            if token_id is not None:
-                self.__build_tree_index(token_id)
-                self.__build_path_index(token_id)
-                self.__build_path_mask(token_id)
+            self.__build_tree_index()
+            self.__build_path_index()
 
     def __build_tree(self, counter):
         q = PriorityQueue()
         tot_cnt = sum(counter.values())
-        for token, cnt in counter.items():
+        for tokenid, cnt in counter.items():
             freq = cnt / tot_cnt
-            node = Node(freq, token)
+            node = Node(freq, tokenid)
             q.put(node)
 
         while q.qsize() > 1:
@@ -107,13 +104,9 @@ class HuffmanTree:
             path_name = os.path.join(save_dir, filename)
             with open(path_name, "rb") as f:
                 return np.load(f)
-        tree = HuffmanTree(None, None)
+        tree = HuffmanTree(None)
         # load struct from json
         tree.root = Node.fromJSON(load_string('tree_struct'))
-        # load path_mask_sign from npy
-        tree.path_mask_sign = loadnp('path_mask_sign.npy')
-        # load path_mask_bias from npy
-        tree.path_mask_bias = loadnp('path_mask_bias.npy')
         # load path_index from npy
         tree.path_index = loadnp('path_index.npy')
         # load path_sign from npy
@@ -144,10 +137,6 @@ class HuffmanTree:
         save2js('tree_struct', self.toJSON())
         # save info in string
         save2js('tree_info', json.dumps(self.info()))
-        # save path_mask_sign in npy
-        save2np('path_mask_sign.npy', self.path_mask_sign)
-        # save path_mask_bias in npy
-        save2np('path_mask_bias.npy', self.path_mask_bias)
         # save path_index in npy
         save2np('path_index.npy', self.path_index)
         # save path_sign in npy
@@ -158,14 +147,14 @@ class HuffmanTree:
     def toJSON(self):
         return self.root.toJSON()
 
-    def __build_tree_index(self, token_id):
-        self.root.build_idx(token_id)
+    def __build_tree_index(self):
+        self.root.build_idx()
         self.info()
         self.leaf_cnt = self.info_dict['leaf_cnt']
         self.inner_cnt = self.leaf_cnt - 1
         self.depth = self.info_dict['depth']
 
-    def __build_path_index(self, token_id):
+    def __build_path_index(self):
         self.path_index = np.zeros(
             (self.leaf_cnt, self.depth), dtype=int)
         self.path_sign = np.zeros(
@@ -179,9 +168,9 @@ class HuffmanTree:
                 bias=np.ones((self.depth,), dtype=np.int8)):
             # node is leaf
             if node.left is None and node.right is None:
-                self.path_index[token_id[node.token]] = index
-                self.path_sign[token_id[node.token]] = sign
-                self.path_bias[token_id[node.token]] = bias
+                self.path_index[node.idx] = index
+                self.path_sign[node.idx] = sign
+                self.path_bias[node.idx] = bias
                 return
             # has child
             index[depth] = node.idx
@@ -196,34 +185,6 @@ class HuffmanTree:
                 dfs(node.right, depth+1, index, sign, bias)
                 sign[depth] = 0
             index[depth] = 0
-
-        dfs(self.root)
-
-    def __build_path_mask(self, token_id):
-        self.path_mask_sign = np.zeros(
-            (self.leaf_cnt, self.inner_cnt), dtype=int)
-        self.path_mask_bias = np.ones(
-            (self.leaf_cnt, self.inner_cnt), dtype=int)
-
-        def dfs(node,
-                sign=np.zeros((self.inner_cnt,), dtype=int),
-                bias=np.ones((self.inner_cnt,), dtype=int)):
-            # node is leaf
-            if node.left is None and node.right is None:
-                self.path_mask_sign[token_id[node.token]] = sign
-                self.path_mask_bias[token_id[node.token]] = bias
-                return
-            # has child
-            if node.left is not None:
-                sign[node.idx] = 1
-                bias[node.idx] = 0
-                dfs(node.left, sign, bias)
-                sign[node.idx] = 0
-                bias[node.idx] = 1
-            if node.right is not None:
-                sign[node.idx] = -1
-                dfs(node.right, sign, bias)
-                sign[node.idx] = 0
 
         dfs(self.root)
 
@@ -255,35 +216,35 @@ class HuffmanTree:
 
 
 def build_huffman_tree(data_file, dict_file, save_dir):
-    token_counter = Counter()
+    tokenid_counter = Counter()
     line_cnt = 0
     with codecs.open(data_file, 'r', encoding='utf-8') as f:
         for line in f:
             try:
                 arr = line.strip().split('\t')
 
-                token_seq = arr[4].split(':')[1]
+                idx_seq = arr[5].split(':')[1]
 
-                tokens = token_seq.split()
+                idxs = idx_seq.split()
 
                 line_cnt = line_cnt + 1
 
-                for token in tokens:
-                    token_counter[token] += 1
+                for idx in idxs:
+                    tokenid_counter[int(idx)] += 1
             except:
                 logging.warning('Omit an ill-formed line: ' + line.strip())
 
-    token_counter["<sos/eos>"] = line_cnt
-
-    token_id = {}
+    token2id = {}
     with codecs.open(dict_file, 'r', encoding='utf-8') as f:
         for line in f:
             token, idx = line.strip().split()
-            token_id[token] = int(idx)
-            if token not in token_counter:
-                token_counter[token] = 0
+            idx = int(idx)
+            token2id[token] = idx
+            if idx not in tokenid_counter:
+                tokenid_counter[idx] = 0
+    tokenid_counter[token2id["<sos/eos>"]] = line_cnt
 
-    tree = HuffmanTree(token_counter, token_id)
+    tree = HuffmanTree(tokenid_counter)
     tree.save(save_dir)
 
 
