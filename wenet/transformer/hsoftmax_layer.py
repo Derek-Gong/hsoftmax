@@ -9,6 +9,39 @@ import time
 
 
 class HSoftmaxLayer(nn.Module):
+    # def __init__(
+    #     self,
+    #     vocab_size: int,
+    #     attention_dim: int,
+    #     tree: HuffmanTree,
+    #     num_workers: int,
+    # ):
+    #     assert tree.info()['leaf_cnt'] == vocab_size
+    #     super().__init__()
+
+    #     self.tree = tree
+    #     self.inner_vector = nn.Linear(attention_dim, tree.inner_cnt, False)
+    #     self.register_buffer(
+    #         'path_mask_sign', torch.CharTensor(tree.path_mask_sign))
+    #     self.register_buffer(
+    #         'path_mask_bias', torch.CharTensor(tree.path_mask_bias))
+
+    #     self.num_workers = mp.cpu_count() if num_workers is None else num_workers
+    #     self.pool = None
+    #     self.queue = None
+
+    # def forward(self, att: torch.Tensor):
+    #     # start = time.time()
+    #     h = self.inner_vector(att)
+    #     h = torch.sigmoid(h)
+    #     h = h.unsqueeze(-2)
+    #     # h.size = [batch, length, 1, inner_cnt], path_mask.size = [vocab_size, inner_cnt]
+    #     H = h * self.path_mask_sign
+    #     # H.size = [batch, length, vocab_size, inner_cnt]
+    #     H = H + self.path_mask_bias
+    #     # print('forward: ', time.time()-start)
+    #     return torch.sum(torch.log(H), -1)
+
     def __init__(
         self,
         vocab_size: int,
@@ -19,12 +52,17 @@ class HSoftmaxLayer(nn.Module):
         assert tree.info()['leaf_cnt'] == vocab_size
         super().__init__()
 
-        self.tree = tree
+        self.vocab_size = vocab_size
         self.inner_vector = nn.Linear(attention_dim, tree.inner_cnt, False)
+        self.tree = tree
+        self.tree_depth = tree.depth
+
         self.register_buffer(
-            'path_mask_sign', torch.CharTensor(tree.path_mask_sign).to_sparse())
+            'path_index', torch.tensor(tree.path_index, requires_grad=False).view(-1))  # [vocab_size * tree.depth]
         self.register_buffer(
-            'path_mask_bias', torch.CharTensor(tree.path_mask_bias).to_sparse())
+            'path_sign', torch.tensor(tree.path_sign, requires_grad=False).view(-1))
+        self.register_buffer(
+            'path_bias', torch.tensor(tree.path_bias, requires_grad=False).view(-1))
 
         self.num_workers = mp.cpu_count() if num_workers is None else num_workers
         self.pool = None
@@ -33,12 +71,13 @@ class HSoftmaxLayer(nn.Module):
     def forward(self, att: torch.Tensor):
         # start = time.time()
         h = self.inner_vector(att)
+        # h.size = [batch, length, inner_cnt]
         h = torch.sigmoid(h)
-        h = h.unsqueeze(-2)
-        # h.size = [batch, length, 1, inner_cnt], path_mask.size = [vocab_size, inner_cnt]
-        H = h * self.path_mask_sign
-        # H.size = [batch, length, vocab_size, inner_cnt]
-        H = H + self.path_mask_bias
+        h = torch.index_select(h, -1, self.path_index)
+        # h.size = [batch, length, vocab_size * tree.depth]
+        h = h * self.path_sign
+        h = h + self.path_bias
+        H = h.view(h.size()[0], -1, self.vocab_size, self.tree_depth)
         # print('forward: ', time.time()-start)
         return torch.sum(torch.log(H), -1)
 

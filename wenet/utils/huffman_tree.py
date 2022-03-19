@@ -65,13 +65,19 @@ class HuffmanTree:
         self.root = None
         self.path_mask_sign = None
         self.path_mask_bias = None
+        self.path_index = None
+        self.path_sign = None
+        self.path_bias = None
         self.leaf_cnt = 0
         self.inner_cnt = 0
+        self.depth = 0
         self.info_dict = None
 
         if counter is not None:
             self.__build_tree(counter)
             if token_id is not None:
+                self.__build_tree_index(token_id)
+                self.__build_path_index(token_id)
                 self.__build_path_mask(token_id)
 
     def __build_tree(self, counter):
@@ -108,10 +114,17 @@ class HuffmanTree:
         tree.path_mask_sign = loadnp('path_mask_sign.npy')
         # load path_mask_bias from npy
         tree.path_mask_bias = loadnp('path_mask_bias.npy')
+        # load path_index from npy
+        tree.path_index = loadnp('path_index.npy')
+        # load path_sign from npy
+        tree.path_sign = loadnp('path_sign.npy')
+        # load path_bias from npy
+        tree.path_bias = loadnp('path_bias.npy')
         # load info_dict from json
         tree.info_dict = json.loads(load_string('tree_info'))
         tree.leaf_cnt = tree.info_dict['leaf_cnt']
         tree.inner_cnt = tree.leaf_cnt - 1
+        tree.depth = tree.info_dict['depth']
 
         return tree
 
@@ -129,22 +142,64 @@ class HuffmanTree:
                 np.save(f, data)
         # save struct in json
         save2js('tree_struct', self.toJSON())
+        # save info in string
+        save2js('tree_info', json.dumps(self.info()))
         # save path_mask_sign in npy
         save2np('path_mask_sign.npy', self.path_mask_sign)
         # save path_mask_bias in npy
         save2np('path_mask_bias.npy', self.path_mask_bias)
-        # save info in string
-        save2js('tree_info', json.dumps(self.info()))
+        # save path_index in npy
+        save2np('path_index.npy', self.path_index)
+        # save path_sign in npy
+        save2np('path_sign.npy', self.path_sign)
+        # save path_bias in npy
+        save2np('path_bias.npy', self.path_bias)
 
     def toJSON(self):
         return self.root.toJSON()
 
-    def __build_path_mask(self, token_id):
+    def __build_tree_index(self, token_id):
         self.root.build_idx(token_id)
         self.info()
         self.leaf_cnt = self.info_dict['leaf_cnt']
         self.inner_cnt = self.leaf_cnt - 1
+        self.depth = self.info_dict['depth']
 
+    def __build_path_index(self, token_id):
+        self.path_index = np.zeros(
+            (self.leaf_cnt, self.depth), dtype=int)
+        self.path_sign = np.zeros(
+            (self.leaf_cnt, self.depth), dtype=np.int8)
+        self.path_bias = np.ones(
+            (self.leaf_cnt, self.depth), dtype=np.int8)
+
+        def dfs(node, depth=0,
+                index=np.zeros((self.depth,), dtype=int),
+                sign=np.zeros((self.depth,), dtype=np.int8),
+                bias=np.ones((self.depth,), dtype=np.int8)):
+            # node is leaf
+            if node.left is None and node.right is None:
+                self.path_index[token_id[node.token]] = index
+                self.path_sign[token_id[node.token]] = sign
+                self.path_bias[token_id[node.token]] = bias
+                return
+            # has child
+            index[depth] = node.idx
+            if node.left is not None:
+                sign[depth] = 1
+                bias[depth] = 0
+                dfs(node.left, depth+1, index, sign, bias)
+                sign[depth] = 0
+                bias[depth] = 1
+            if node.right is not None:
+                sign[depth] = -1
+                dfs(node.right, depth+1, index, sign, bias)
+                sign[depth] = 0
+            index[depth] = 0
+
+        dfs(self.root)
+
+    def __build_path_mask(self, token_id):
         self.path_mask_sign = np.zeros(
             (self.leaf_cnt, self.inner_cnt), dtype=int)
         self.path_mask_bias = np.ones(
@@ -157,6 +212,7 @@ class HuffmanTree:
             if node.left is None and node.right is None:
                 self.path_mask_sign[token_id[node.token]] = sign
                 self.path_mask_bias[token_id[node.token]] = bias
+                return
             # has child
             if node.left is not None:
                 sign[node.idx] = 1
@@ -234,9 +290,11 @@ def build_huffman_tree(data_file, dict_file, save_dir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='build huffman tree on train set')
-    parser.add_argument('--train-data', required=True, help='train data file')
-    parser.add_argument('--dict', required=True, help='token to id mapping')
-    parser.add_argument('--tree-save-dir', required=True,
+    parser.add_argument('--train-data', required=True,
+                        help='train data file')
+    parser.add_argument('--dict', required=True,
                         help='token to id mapping')
+    parser.add_argument('--tree-save-dir', required=True,
+                        help='tree saving directory')
     args = parser.parse_args()
     build_huffman_tree(args.train_data, args.dict, args.tree_save_dir)
