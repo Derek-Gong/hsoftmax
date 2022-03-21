@@ -114,7 +114,7 @@ if __name__ == '__main__':
                                  **dataset_conf,
                                  raw_wav=raw_wav)
     cv_dataset = AudioDataset(args.cv_data, **dataset_conf, raw_wav=raw_wav)
-    
+
     if distributed:
         logging.info('training on multiple gpus, this gpu {}'.format(args.gpu))
         dist.init_process_group(args.dist_backend,
@@ -150,7 +150,7 @@ if __name__ == '__main__':
     else:
         input_dim = train_dataset.input_dim
     vocab_size = train_dataset.output_dim
-    
+
     # Save configs to model_dir/train.yaml for inference and export
     configs['input_dim'] = input_dim
     configs['output_dim'] = vocab_size
@@ -223,6 +223,9 @@ if __name__ == '__main__':
     scaler = None
     if args.use_amp:
         scaler = torch.cuda.amp.GradScaler()
+    # keep track of the best model
+    best_acc = 0.
+    best_loss = float('inf')
     for epoch in range(start_epoch, num_epochs):
         if distributed:
             train_sampler.set_epoch(epoch)
@@ -232,8 +235,8 @@ if __name__ == '__main__':
                        writer, configs, scaler)
 
         total_loss, total_acc, total_ppl, num_seen_utts = executor.cv(model, cv_data_loader, device,
-                                                configs)
-                                          
+                                                                      configs)
+
         final_epoch = epoch
 
         if args.world_size > 1:
@@ -262,7 +265,8 @@ if __name__ == '__main__':
             cv_ppl = total_ppl / num_seen_utts
 
         if args.rank == 0:
-            logging.info('Epoch {} CV info cv_loss {} cv_acc {}'.format(epoch, cv_loss, cv_acc))
+            logging.info('Epoch {} CV info cv_loss {} cv_acc {}'.format(
+                epoch, cv_loss, cv_acc))
 
             save_model_path = os.path.join(model_dir, '{}.pt'.format(epoch))
             save_checkpoint(
@@ -278,6 +282,22 @@ if __name__ == '__main__':
             writer.add_scalar('epoch/cv_acc', cv_acc, epoch)
             writer.add_scalar('epoch/cv_ppl', cv_ppl, epoch)
             writer.add_scalar('epoch/lr', lr, epoch)
+
+            if cv_acc > best_acc:
+                best_acc = cv_acc
+                best_acc_model = epoch
+            if cv_loss > best_loss:
+                best_loss = cv_loss
+                best_loss_model = epoch
+
+    if best_acc_model is not None and args.rank == 0:
+        model_path = os.path.join(model_dir, 'best_acc')
+        os.symlink('{}.pt'.format(best_acc_model), model_path + '.pt')
+        os.symlink('{}.yaml'.format(best_acc_model), model_path + '.yaml')
+    if best_loss_model is not None and args.rank == 0:
+        model_path = os.path.join(model_dir, 'best_loss')
+        os.symlink('{}.pt'.format(best_loss_model), model_path + '.pt')
+        os.symlink('{}.yaml'.format(best_loss_model), model_path + '.yaml')
 
     if final_epoch is not None and args.rank == 0:
         final_model_path = os.path.join(model_dir, 'final.pt')

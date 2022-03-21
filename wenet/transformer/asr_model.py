@@ -34,7 +34,6 @@ from wenet.utils.mask import (make_pad_mask, mask_finished_preds,
                               mask_finished_scores, subsequent_mask)
 
 from wenet.transformer.hsoftmax_layer import HSoftmaxLayer
-from wenet.utils.huffman_tree import HuffmanTree
 
 import time
 
@@ -260,6 +259,8 @@ class ASRModel(torch.nn.Module):
             # 2.2 First beam prune: select topk best prob at current time
             if self.hsoftmax is not None:
                 # s = time.time()
+                # logp is in fact attention embedding here,
+                # because decoder output_layer turned off when init model
                 top_k_logp, top_k_index = self.hsoftmax.beam_search(
                     logp, beam_size)
                 top_k_logp, top_k_index = top_k_logp.to(
@@ -728,11 +729,9 @@ def init_asr_model(configs):
     if decoder_type == 'transformer':
         if 'hsoftmax' in configs:
             configs['decoder_conf']['use_output_layer'] = False
-            tree = HuffmanTree.load(configs['hsoftmax']['huffman_tree_dir'])
             hsoftmax = HSoftmaxLayer(vocab_size,
                                      encoder.output_size(),
-                                     tree,
-                                     configs['hsoftmax']['num_workers'])
+                                     **configs['hsoftmax'])
 
         decoder = TransformerDecoder(vocab_size, encoder.output_size(),
                                      **configs['decoder_conf'])

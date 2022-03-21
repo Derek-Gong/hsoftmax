@@ -119,7 +119,13 @@ class HuffmanTree:
         tree.inner_cnt = tree.leaf_cnt - 1
         tree.depth = tree.info_dict['depth']
 
+        tree.validate()
         return tree
+
+    def validate(self):
+        assert np.all(self.path_bias[self.path_sign == 0] == 1)
+        assert np.all(self.path_bias[self.path_sign == 1] == 0)
+        assert np.all(self.path_bias[self.path_sign == -1] == 1)
 
     def save(self, save_dir):
         Path(save_dir).mkdir(parents=True, exist_ok=True)
@@ -153,6 +159,7 @@ class HuffmanTree:
         self.leaf_cnt = self.info_dict['leaf_cnt']
         self.inner_cnt = self.leaf_cnt - 1
         self.depth = self.info_dict['depth']
+        self.correct_leave_idx()
 
     def __build_path_index(self):
         self.path_index = np.zeros(
@@ -168,9 +175,9 @@ class HuffmanTree:
                 bias=np.ones((self.depth,), dtype=np.int8)):
             # node is leaf
             if node.left is None and node.right is None:
-                self.path_index[node.idx] = index
-                self.path_sign[node.idx] = sign
-                self.path_bias[node.idx] = bias
+                self.path_index[node.tokenid] = index
+                self.path_sign[node.tokenid] = sign
+                self.path_bias[node.tokenid] = bias
                 return
             # has child
             index[depth] = node.idx
@@ -186,6 +193,17 @@ class HuffmanTree:
                 sign[depth] = 0
             index[depth] = 0
 
+        dfs(self.root)
+
+    def correct_leave_idx(self):
+        def dfs(node):
+            if node is None:
+                return
+            if node.tokenid is not None:
+                node.idx = self.inner_cnt + node.tokenid
+                return
+            dfs(node.left)
+            dfs(node.right)
         dfs(self.root)
 
     def info(self):
