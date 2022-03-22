@@ -18,6 +18,7 @@ import argparse
 import copy
 import logging
 import os
+import errno
 
 import torch
 import torch.distributed as dist
@@ -283,21 +284,25 @@ if __name__ == '__main__':
             writer.add_scalar('epoch/cv_ppl', cv_ppl, epoch)
             writer.add_scalar('epoch/lr', lr, epoch)
 
+            def save_best(name, epoch):
+                def symlink_force(target, link_name):
+                    try:
+                        os.symlink(target, link_name)
+                    except OSError as e:
+                        if e.errno == errno.EEXIST:
+                            os.remove(link_name)
+                            os.symlink(target, link_name)
+                        else:
+                            raise e
+                model_path = os.path.join(model_dir, name)
+                symlink_force('{}.pt'.format(epoch), model_path + '.pt')
+                symlink_force('{}.yaml'.format(epoch), model_path + '.yaml')
             if cv_acc > best_acc:
                 best_acc = cv_acc
-                best_acc_model = epoch
-            if cv_loss > best_loss:
+                save_best('best_acc', epoch)
+            if cv_loss < best_loss:
                 best_loss = cv_loss
-                best_loss_model = epoch
-
-    if best_acc_model is not None and args.rank == 0:
-        model_path = os.path.join(model_dir, 'best_acc')
-        os.symlink('{}.pt'.format(best_acc_model), model_path + '.pt')
-        os.symlink('{}.yaml'.format(best_acc_model), model_path + '.yaml')
-    if best_loss_model is not None and args.rank == 0:
-        model_path = os.path.join(model_dir, 'best_loss')
-        os.symlink('{}.pt'.format(best_loss_model), model_path + '.pt')
-        os.symlink('{}.yaml'.format(best_loss_model), model_path + '.yaml')
+                save_best('best_loss', epoch)
 
     if final_epoch is not None and args.rank == 0:
         final_model_path = os.path.join(model_dir, 'final.pt')

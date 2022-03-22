@@ -3,9 +3,11 @@ from typing import List
 
 import torch
 from torch import nn
+import math
 from wenet.utils.huffman_tree import HuffmanTree
 from wenet.utils.multiprocessing import ProcessPool, Worker
 from queue import PriorityQueue
+import heapq
 import time
 import logging
 
@@ -29,7 +31,8 @@ class HSoftmaxLayer(nn.Module):
         self.tree = HuffmanTree.load(huffman_tree_dir)
         assert self.tree.info()['leaf_cnt'] == vocab_size
 
-        self.inner_vector = nn.Linear(attention_dim, self.tree.inner_cnt, False)
+        self.inner_vector = nn.Linear(
+            attention_dim, self.tree.inner_cnt, False)
         self.tree_depth = self.tree.depth
 
         self.register_buffer(
@@ -61,34 +64,14 @@ class HSoftmaxLayer(nn.Module):
         logp = torch.sum(torch.log(H), -1)
         return logp
 
-    def __init_search(self):
-        if self.search_emb is None:
-            device = self.inner_vector.weight.device
-            self.search_emb = torch.cat([self.inner_vector.weight, torch.zeros(
-                (self.vocab_size, self.attention_dim), device=device)], dim=0)
-            self.son_index = torch.zeros(
-                (self.tree.inner_cnt + self.vocab_size, 2), device=device, dtype=torch.int32) - 1
-
-            def dfs(node):
-                if node.tokenid is not None:
-                    self.son_index[node.idx] = torch.tensor(
-                        [node.idx, node.idx], device=device, dtype=torch.int32)
-                    return
-                self.son_index[node.idx] = torch.tensor(
-                    [node.left.idx, node.right.idx], device=device, dtype=torch.int32)
-                dfs(node.left)
-                dfs(node.right)
-            dfs(self.tree.root)
-
-    # def greedy_search(self, att: torch.Tensor):
-    #     self.__init_greedy_search()
-        # batch_index = torch.zeros(
-        #     (att.size()[0],), dtype=torch.int32, device=att.device)
-        # batch_prob = torch.zeros((att.size()[0],), device=att.device)
-
-    #     while not torch.all(torch.ge(batch_index, self.tree.inner_cnt)):
-    @torch.no_grad()
     def beam_search(self, att: torch.Tensor, out_beam_size: int):
+        if att.is_cuda:
+            return self.beam_search_gpu(att, out_beam_size)
+        else:
+            return self.beam_search_cpu(att, out_beam_size)
+
+    #  core line: while not torch.all(torch.ge(batch_index, self.tree.inner_cnt)):
+    def beam_search_gpu(self, att: torch.Tensor, out_beam_size: int):
         self.__init_search()
         batch_size = att.size()[0]
         attention_dim = att.size()[-1]
@@ -130,53 +113,84 @@ class HSoftmaxLayer(nn.Module):
                 self.search_emb, 0, batch_index.view(-1)).view(batch_size, -1, attention_dim)
 
         batch_index -= self.tree.inner_cnt
-        # batch_prob = torch.clip(batch_prob, eps, 1)
+
+        batch_prob, batch_index = self.__fill_beam(
+            batch_prob, batch_index, out_beam_size)
+
+        return torch.log(batch_prob), batch_index
+
+    def __init_gpu_search(self):
+        if self.search_emb is None:
+            device = self.inner_vector.weight.device
+            self.search_emb = torch.cat([self.inner_vector.weight, torch.zeros(
+                (self.vocab_size, self.attention_dim), device=device)], dim=0)
+            self.son_index = torch.zeros(
+                (self.tree.inner_cnt + self.vocab_size, 2), device=device, dtype=torch.int32) - 1
+
+            def dfs(node):
+                if node.tokenid is not None:
+                    self.son_index[node.idx] = torch.tensor(
+                        [node.idx, node.idx], device=device, dtype=torch.int32)
+                    return
+                self.son_index[node.idx] = torch.tensor(
+                    [node.left.idx, node.right.idx], device=device, dtype=torch.int32)
+                dfs(node.left)
+                dfs(node.right)
+            dfs(self.tree.root)
+
+    def __fill_beam(self, batch_prob, batch_index, out_beam_size):
+        batch_size = batch_index.size()[0]
         cand_size = batch_index.size()[-1]
         if out_beam_size > cand_size:
             dummy_index = torch.zeros(
                 (batch_size, out_beam_size - cand_size), dtype=torch.int32, device=batch_index.device)
-            # dummy_prob = self.eps * \
-            #     torch.ones((batch_size, beam_size - cand_size),
-            #                device=batch_prob.device)
             dummy_prob = torch.zeros(
                 (batch_size, out_beam_size - cand_size), device=batch_prob.device)
 
-            torch.cat([batch_index, dummy_index], dim=-1)
-            torch.cat([batch_prob, dummy_prob], dim=-1)
+            batch_index = torch.cat([batch_index, dummy_index], dim=-1)
+            batch_prob = torch.cat([batch_prob, dummy_prob], dim=-1)
+        return batch_prob, batch_index
 
-        return torch.log(batch_prob), batch_index
+    # to-do: profile in_queue, out_queue: queue.get consume over 90% time of beam_search
+    # use torch.multiprocessing.Process for gpu and shared memory for tensor
+    # include gpu algorithm
+    def beam_search_cpu(self, att: torch.Tensor, out_beam_size: int):
+        if self.pool is None:
+            self.inner_vector = self.inner_vector.to('cpu')
+            self.pool = ProcessPool(
+                self.num_workers, SearchWorker, self.inner_vector, self.tree.root, self.beam_size)
+        att = att.to('cpu')
+        probs, indexs = [], []
+        start = time.time()
+        # # single process method
+        # for t in att:
+        #     top_k_logp, top_k_index = self.pool.workers[0](t)
+        #     logps.append(top_k_logp)
+        #     indexs.append(top_k_index)
 
-    # def beam_search(self, att: torch.Tensor, beam_size: int):
-    #     if self.pool is None:
-    #         self.inner_vector=self.inner_vector.to('cpu')
-    #         self.pool=ProcessPool(
-    #             self.num_workers, SearchWorker, self.inner_vector, self.tree.root, beam_size)
-    #     att=att.to('cpu')
-    #     logps, indexs=[], []
-    #     # start = time.time()
-    #     # # single process method
-    #     # for t in att:
-    #     #     top_k_logp, top_k_index = self.pool.workers[0](t)
-    #     #     logps.append(top_k_logp)
-    #     #     indexs.append(top_k_index)
+        # accelarate ratio 2, shared memeory replace Queue may be faster
+        for top_k_prob, top_k_index in self.pool.imap(att):
+            probs.append(top_k_prob)
+            indexs.append(top_k_index)
 
-    #     # accelarate ratio 2, shared memeory replace Queue may be faster
-    #     for top_k_logp, top_k_index in self.pool.imap(att):
-    #         logps.append(top_k_logp)
-    #         indexs.append(top_k_index)
-    #     # print('beam', time.time()-start)
-    #     return torch.FloatTensor(logps), torch.LongTensor(indexs)  # (B*N, N)
+        batch_prob = torch.FloatTensor(probs)
+        batch_index = torch.IntTensor(indexs)
+        batch_prob, batch_index = self.__fill_beam(
+            batch_prob, batch_index, out_beam_size)
+
+        return torch.log(batch_prob), batch_index  # (B*N, N)
 
 
 class SearchWorker(Worker):
     def __init__(self, in_queue, out_queue, inner_vector, root, beam_size):
         super().__init__(in_queue, out_queue)
-        self.inner_vector = inner_vector  # pickle these could be time consuming?
+        self.inner_vector = inner_vector.weight.clone()
         self.root = root
         self.beam_size = beam_size
 
     def __call__(self, att, idx=None):
-        assert att.dim() == 1  # batch size should be 1, att should be an attention for only 1 token
+        # batch size should be 1, att should be an attention for only 1 token
+        assert att.dim() == 1
 
         class Candidate:
             def __init__(self, prob, node):
@@ -185,31 +199,42 @@ class SearchWorker(Worker):
 
             def __lt__(self, other):
                 return self.prob < other.prob
-        candidates = PriorityQueue()
-        tokens = PriorityQueue()
-        candidates.put(Candidate(1.0, self.root))
+        candidates = []
+        _candidates = []
+        token_cnt = 0
+        heapq.heappush(candidates, Candidate(1.0, self.root))
 
-        while not candidates.empty():
-            cur = candidates.get()
+        while token_cnt < len(candidates):
+            token_cnt = 0
+            while len(candidates) > 0:
+                cur = heapq.heappop(candidates)
 
-            if cur.node.token is not None:  # leaf node
-                tokens.put(cur)
-                while tokens.qsize() > self.beam_size:
-                    tokens.get()
-            else:  # inner node
-                prob_left = torch.sigmoid(
-                    torch.dot(att, self.inner_vector.weight[cur.node.idx])).item()
-                prob_right = 1.0 - prob_left
-                candidates.put(Candidate(prob_left, cur.node.left))
-                candidates.put(Candidate(prob_right, cur.node.right))
+                if cur.node.tokenid is not None:  # leaf node
+                    token_cnt += 1
+                    heapq.heappush(_candidates, cur)
+                else:  # inner node
+                    prob_left = torch.sigmoid(
+                        torch.dot(att, self.inner_vector[cur.node.idx])).item()
+                    prob_right = 1.0 - prob_left
+                    prob_left *= cur.prob
+                    prob_right *= cur.prob
+                    heapq.heappush(_candidates, Candidate(
+                        prob_left, cur.node.left))
+                    heapq.heappush(_candidates, Candidate(
+                        prob_right, cur.node.right))
 
-                while candidates.qsize() > self.beam_size:
-                    candidates.get()
+            while len(_candidates) > self.beam_size:
+                cur = heapq.heappop(_candidates)
+                if cur.node.tokenid is not None:
+                    token_cnt -= 1
+            candidates = _candidates
+            _candidates = []
 
-        top_k_logp, top_k_index = [], []
-        while not tokens.empty():
-            cur = tokens.get()
-            top_k_logp.append(cur.prob)
-            top_k_index.append(cur.node.idx)
+        top_k_prob, top_k_index = [], []
+        for cur in candidates:
+            if cur.prob == 0.:
+                print([(cand.prob, cand.node.tokenid) for cand in candidates])
+            top_k_prob.append(cur.prob)
+            top_k_index.append(cur.node.tokenid)
 
-        return top_k_logp, top_k_index
+        return top_k_prob, top_k_index
