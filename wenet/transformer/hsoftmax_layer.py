@@ -72,7 +72,7 @@ class HSoftmaxLayer(nn.Module):
 
     #  core line: while not torch.all(torch.ge(batch_index, self.tree.inner_cnt)):
     def beam_search_gpu(self, att: torch.Tensor, out_beam_size: int):
-        self.__init_search()
+        self.__init_gpu_search()
         batch_size = att.size()[0]
         attention_dim = att.size()[-1]
         # [batch_size, attention_dim] -> [batch_size, attention_dim, 1]
