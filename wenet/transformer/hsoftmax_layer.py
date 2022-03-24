@@ -28,7 +28,7 @@ class HSoftmaxLayer(nn.Module):
         self.beam_size = beam_size
         self.eps = 1e-9
         self.inf = 1e18
-        self.multilayer_decoding = 2
+        self.multilayer_decoding = 3
         self.multilayer_leaves = 2**self.multilayer_decoding
         self.multilayer_nodes = self.multilayer_decoding * self.multilayer_leaves
 
@@ -187,7 +187,7 @@ class HSoftmaxLayer(nn.Module):
         if self.pool is None:
             self.inner_vector = self.inner_vector.to('cpu')
             self.pool = ProcessPool(
-                self.num_workers, SearchWorker, self.inner_vector.weight, self.tree.root, self.beam_size,
+                self.num_workers, self.attention_dim, SearchWorker, self.inner_vector.weight, self.tree.root, self.beam_size,
                 self.tree.inner_cnt, self.multilayer_leaves, self.search_emb, self.son_index)
         att = att.to('cpu')
         att = att.share_memory_()
@@ -212,9 +212,19 @@ class HSoftmaxLayer(nn.Module):
 
 
 class SearchWorker(Worker):
-    def __init__(self, in_queue, out_queue, inner_vector, root, beam_size,
-                 inner_cnt, multilayer_leaves, search_emb, son_index):
-        super().__init__(in_queue, out_queue)
+    def __init__(self, workerid, out_queue,
+                 jobid_share,
+                 att_share,
+                 tokenid_share, prob_share,
+                 start_flag, finish_flag,
+                 start_event, finish_event,
+                 inner_vector, root, beam_size, inner_cnt, multilayer_leaves, search_emb, son_index):
+        super().__init__(workerid, out_queue,
+                         jobid_share,
+                         att_share,
+                         tokenid_share, prob_share,
+                         start_flag, finish_flag,
+                         start_event, finish_event,)
         self.inner_vector = inner_vector
         self.root = root
         self.beam_size = beam_size
@@ -243,7 +253,7 @@ class SearchWorker(Worker):
             else:
                 prob *= 1. - prob_left
                 node = node.right
-        return [prob], [node.tokenid]
+        return prob, node.tokenid
 
     def __greedy_search_multilayer(self, att):
         prob, node_idx = 1., 0
@@ -255,7 +265,7 @@ class SearchWorker(Worker):
             leaf_prob, son_idx = leaf_prob.max(-1)
             prob = prob * leaf_prob
             node_idx = self.son_index[node_idx][son_idx]
-        return [prob], [node_idx-self.inner_cnt]
+        return prob, node_idx-self.inner_cnt
 
     def __beam_search(self, att):
         class Candidate:
