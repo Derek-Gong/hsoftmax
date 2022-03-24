@@ -185,9 +185,10 @@ class HSoftmaxLayer(nn.Module):
     # include gpu algorithm
     def beam_search_cpu(self, att: torch.Tensor, out_beam_size: int):
         if self.pool is None:
+            batch_size = att.size()[0]
             self.inner_vector = self.inner_vector.to('cpu')
             self.pool = ProcessPool(
-                self.num_workers, self.attention_dim, SearchWorker, self.inner_vector.weight, self.tree.root, self.beam_size,
+                self.num_workers, batch_size, self.attention_dim, SearchWorker, self.inner_vector.weight, self.tree.root, self.beam_size,
                 self.tree.inner_cnt, self.multilayer_leaves, self.search_emb, self.son_index)
         att = att.to('cpu')
         att = att.share_memory_()
@@ -212,19 +213,15 @@ class HSoftmaxLayer(nn.Module):
 
 
 class SearchWorker(Worker):
-    def __init__(self, workerid, out_queue,
-                 jobid_share,
+    def __init__(self, workerid, jobid_share, lock, batch_size_share,
                  att_share,
                  tokenid_share, prob_share,
-                 start_flag, finish_flag,
-                 start_event, finish_event,
+                 start_event, data_ready, data_ready_lock, data_ready_event,
                  inner_vector, root, beam_size, inner_cnt, multilayer_leaves, search_emb, son_index):
-        super().__init__(workerid, out_queue,
-                         jobid_share,
+        super().__init__(workerid, jobid_share, lock, batch_size_share,
                          att_share,
                          tokenid_share, prob_share,
-                         start_flag, finish_flag,
-                         start_event, finish_event,)
+                         start_event, data_ready, data_ready_lock, data_ready_event)
         self.inner_vector = inner_vector
         self.root = root
         self.beam_size = beam_size
