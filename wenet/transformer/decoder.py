@@ -34,6 +34,7 @@ class TransformerDecoder(torch.nn.Module):
             True: x -> x + linear(concat(x, att(x)))
             False: x -> x + att(x)
     """
+
     def __init__(
         self,
         vocab_size: int,
@@ -49,7 +50,8 @@ class TransformerDecoder(torch.nn.Module):
         use_output_layer: bool = True,
         normalize_before: bool = True,
         concat_after: bool = False,
-        bBypassSrcAttn: bool = False
+        bBypassSrcAttn: bool = False,
+        mix_decode: bool = True
     ):
         assert check_argument_types()
         super().__init__()
@@ -84,6 +86,7 @@ class TransformerDecoder(torch.nn.Module):
         self.after_norm = torch.nn.LayerNorm(attention_dim, eps=1e-12)
         self.use_output_layer = use_output_layer
         # modify output_layer to hsoftmax
+        self.mix_decode = mix_decode
         self.output_layer = torch.nn.Linear(attention_dim, vocab_size)
         self.num_blocks = num_blocks
         self.decoders = torch.nn.ModuleList([
@@ -129,7 +132,7 @@ class TransformerDecoder(torch.nn.Module):
                 olens: (batch, )
         """
         tgt = ys_in_pad
-        
+
         # tgt_mask: (B, 1, L)
         tgt_mask = (~make_pad_mask(ys_in_lens).unsqueeze(1)).to(tgt.device)
         # m: (1, L, L)
@@ -143,6 +146,9 @@ class TransformerDecoder(torch.nn.Module):
                                                      memory_mask)
         if self.normalize_before:
             x = self.after_norm(x)
+
+        if not self.training and self.mix_decode:
+            x = x.to('cpu')
         if self.use_output_layer:
             x = self.output_layer(x)
         olens = tgt_mask.sum(1)
@@ -187,6 +193,9 @@ class TransformerDecoder(torch.nn.Module):
             y = self.after_norm(x[:, -1])
         else:
             y = x[:, -1]
+
+        if not self.training and self.mix_decode:
+            y = y.to('cpu')
         if self.use_output_layer:
             y = torch.log_softmax(self.output_layer(y), dim=-1)
         return y, new_cache
@@ -213,6 +222,7 @@ class BiTransformerDecoder(torch.nn.Module):
             True: x -> x + linear(concat(x, att(x)))
             False: x -> x + att(x)
     """
+
     def __init__(
         self,
         vocab_size: int,

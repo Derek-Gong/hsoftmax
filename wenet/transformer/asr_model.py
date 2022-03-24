@@ -53,6 +53,7 @@ class ASRModel(torch.nn.Module):
         reverse_weight: float = 0.0,
         lsm_weight: float = 0.0,
         length_normalized_loss: bool = False,
+        mix_decode: bool = True
     ):
         assert 0.0 <= ctc_weight <= 1.0, ctc_weight
 
@@ -68,6 +69,7 @@ class ASRModel(torch.nn.Module):
         self.encoder = encoder
         self.decoder = decoder
         self.hsoftmax = hsoftmax
+        self.mix_decode = mix_decode
         self.ctc = ctc
         self.criterion_att = LabelSmoothingLoss(
             size=vocab_size,
@@ -216,7 +218,6 @@ class ASRModel(torch.nn.Module):
         assert decoding_chunk_size != 0
         device = speech.device
         batch_size = speech.shape[0]
-        # start = time.time()
         # Let's assume B = batch_size and N = beam_size
         # 1. Encoder
         encoder_out, encoder_mask = self._forward_encoder(
@@ -241,7 +242,6 @@ class ASRModel(torch.nn.Module):
         end_flag = torch.zeros_like(scores, dtype=torch.bool, device=device)
         cache: Optional[List[torch.Tensor]] = None
         # 2. Decoder forward step by step
-        # print(batch_size, beam_size)
         from tqdm import tqdm
         tlen = tqdm(range(1, maxlen + 1), unit="token len")
         for i in tlen:
@@ -255,19 +255,19 @@ class ASRModel(torch.nn.Module):
             de = time.time()
             logp, cache = self.decoder.forward_one_step(
                 encoder_out, encoder_mask, hyps, hyps_mask, cache)
-            # print('decoder', time.time()-de) #0.015
             # 2.2 First beam prune: select topk best prob at current time
             if self.hsoftmax is not None:
-                # s = time.time()
                 # logp is in fact attention embedding here,
                 # because decoder output_layer turned off when init model
                 top_k_logp, top_k_index = self.hsoftmax.beam_search(
                     logp, beam_size)
                 top_k_logp, top_k_index = top_k_logp.to(
                     device), top_k_index.to(device)
-                # print('hsoftmax', time.time()-s)
             else:
                 top_k_logp, top_k_index = logp.topk(beam_size)  # (B*N, N)
+                top_k_logp, top_k_index = top_k_logp.to(
+                    device), top_k_index.to(device)
+
             top_k_logp = mask_finished_scores(top_k_logp, end_flag)
             top_k_index = mask_finished_preds(top_k_index, end_flag, self.eos)
             # 2.3 Second beam prune: select topk score with history

@@ -138,8 +138,14 @@ if __name__ == '__main__':
     use_cuda = args.gpu >= 0 and torch.cuda.is_available()
     device = torch.device('cuda' if use_cuda else 'cpu')
     model = model.to(device)
-
     model.eval()
+
+    mix_decode = True
+    if mix_decode:
+        if model.hsoftmax:
+            model.hsoftmax = model.hsoftmax.to('cpu')
+        else:
+            model.decoder.output_layer = model.decoder.output_layer.to('cpu')
     with torch.no_grad(), open(args.result_file, 'w') as fout:
         for batch_idx, batch in enumerate(test_data_loader):
             keys, feats, target, feats_lengths, target_lengths = batch
