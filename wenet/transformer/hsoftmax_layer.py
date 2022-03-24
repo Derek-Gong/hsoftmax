@@ -27,6 +27,7 @@ class HSoftmaxLayer(nn.Module):
         self.attention_dim = attention_dim
         self.beam_size = beam_size
         self.eps = 1e-9
+        self.inf = 1e18
 
         self.tree = HuffmanTree.load(huffman_tree_dir)
         assert self.tree.info()['leaf_cnt'] == vocab_size
@@ -92,7 +93,7 @@ class HSoftmaxLayer(nn.Module):
                 torch.bmm(batch_emb, att).view(batch_size, -1))
             # print(left_prob.size(), batch_emb.size(), att.size())
             # correct leaf prob to 1, otherwise for all leaves left_prob = right_prob = 0.5
-            left_prob[batch_index >= self.tree.inner_cnt] = 1.
+            # left_prob[batch_index >= self.tree.inner_cnt] = 1.
             right_prob = 1 - left_prob
             # [batch_size, beam_size, 2]
             node_prob = torch.stack([left_prob, right_prob], dim=-1)
@@ -122,7 +123,7 @@ class HSoftmaxLayer(nn.Module):
     def __init_gpu_search(self):
         if self.search_emb is None:
             device = self.inner_vector.weight.device
-            self.search_emb = torch.cat([self.inner_vector.weight, torch.zeros(
+            self.search_emb = torch.cat([self.inner_vector.weight, self.inf * torch.ones(
                 (self.vocab_size, self.attention_dim), device=device)], dim=0)
             self.son_index = torch.zeros(
                 (self.tree.inner_cnt + self.vocab_size, 2), device=device, dtype=torch.int32) - 1
