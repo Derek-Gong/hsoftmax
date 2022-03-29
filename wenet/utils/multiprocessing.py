@@ -13,7 +13,7 @@ import time
 class Worker(Process):
     """Process executing tasks from a given args queue"""
 
-    def __init__(self, workerid, run_flag,
+    def __init__(self, workerid,
                  jobid_share, lock, batch_size_share,
                  att_share,
                  tokenid_share, prob_share,

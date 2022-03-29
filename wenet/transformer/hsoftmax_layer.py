@@ -19,7 +19,7 @@ class HSoftmaxLayer(nn.Module):
         attention_dim: int,
         huffman_tree_dir: str,
         num_workers: int,
-        beam_size: int = 10
+        beam_size: int = 1
     ):
         super().__init__()
 
@@ -28,7 +28,7 @@ class HSoftmaxLayer(nn.Module):
         self.beam_size = beam_size
         self.eps = 1e-9
         self.inf = 1e18
-        self.multilayer_decoding = 3
+        self.multilayer_decoding = 2
         self.multilayer_leaves = 2**self.multilayer_decoding
         self.multilayer_nodes = self.multilayer_decoding * self.multilayer_leaves
 

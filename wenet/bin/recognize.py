@@ -81,7 +81,10 @@ if __name__ == '__main__':
                         default=0.0,
                         help='''right to left weight for attention rescoring
                                 decode mode''')
-
+    parser.add_argument('--mix_decode',
+                        action='store_true',
+                        default=False,
+                        help='Use GPU decoding just before the last layer (linear or hsoftmax)')
     args = parser.parse_args()
     print(args)
     logging.basicConfig(level=logging.DEBUG,
@@ -98,6 +101,7 @@ if __name__ == '__main__':
     with open(args.config, 'r') as fin:
         configs = yaml.load(fin, Loader=yaml.FullLoader)
 
+    configs['decoder_conf']['mix_decode'] = args.mix_decode
     raw_wav = configs['raw_wav']
     # Init dataset and data loader
     # Init dataset and data loader
@@ -140,12 +144,12 @@ if __name__ == '__main__':
     model = model.to(device)
     model.eval()
 
-    mix_decode = True
-    if mix_decode:
+    if args.mix_decode:
         if model.hsoftmax:
             model.hsoftmax = model.hsoftmax.to('cpu')
         else:
             model.decoder.output_layer = model.decoder.output_layer.to('cpu')
+
     with torch.no_grad(), open(args.result_file, 'w') as fout:
         for batch_idx, batch in enumerate(test_data_loader):
             keys, feats, target, feats_lengths, target_lengths = batch
