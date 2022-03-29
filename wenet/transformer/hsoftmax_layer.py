@@ -5,7 +5,7 @@ import torch
 from torch import nn
 import math
 from wenet.utils.huffman_tree import HuffmanTree
-from wenet.utils.multiprocessing import ProcessPool, Worker
+from wenet.utils.hsoftmax_processpool import ProcessPool, Worker
 from queue import PriorityQueue
 import heapq
 import time
@@ -19,7 +19,8 @@ class HSoftmaxLayer(nn.Module):
         attention_dim: int,
         huffman_tree_dir: str,
         num_workers: int,
-        beam_size: int = 1
+        beam_size: int = 1,
+        multilayer_decoding: int = 2,
     ):
         super().__init__()
 
@@ -28,7 +29,7 @@ class HSoftmaxLayer(nn.Module):
         self.beam_size = beam_size
         self.eps = 1e-9
         self.inf = 1e18
-        self.multilayer_decoding = 2
+        self.multilayer_decoding = multilayer_decoding
         self.multilayer_leaves = 2**self.multilayer_decoding
         self.multilayer_nodes = self.multilayer_decoding * self.multilayer_leaves
 
@@ -69,7 +70,6 @@ class HSoftmaxLayer(nn.Module):
         return logp
 
     def beam_search(self, att: torch.Tensor, out_beam_size: int):
-        # att = att.to('cpu')
         self.__init_search()
         if self.inner_vector.weight.is_cuda:
             return self.beam_search_gpu(att, out_beam_size)
@@ -78,7 +78,6 @@ class HSoftmaxLayer(nn.Module):
 
     #  core line: while not torch.all(torch.ge(batch_index, self.tree.inner_cnt)):
     def beam_search_gpu(self, att: torch.Tensor, out_beam_size: int):
-        # print(torch.linalg.norm(att, ord=1, dim=-1))
         leaf_prone = min(self.beam_size, self.multilayer_leaves)
         batch_size = att.size()[0]
         # [batch_size, attention_dim] -> [batch_size, attention_dim, 1]
@@ -129,8 +128,6 @@ class HSoftmaxLayer(nn.Module):
         if self.search_emb is None:
             device = self.inner_vector.weight.device
             inf = self.inf * torch.ones(self.attention_dim, device=device)
-            # self.search_emb = torch.cat([self.inner_vector.weight, inf * torch.ones(
-            #     (self.vocab_size, self.attention_dim), device=device)], dim=0)
             self.search_emb = torch.zeros(
                 self.tree.inner_cnt + self.vocab_size, self.multilayer_nodes, self.attention_dim, device=device)
             self.son_index = torch.zeros(
@@ -180,26 +177,17 @@ class HSoftmaxLayer(nn.Module):
             batch_prob = torch.cat([batch_prob, dummy_prob], dim=-1)
         return batch_prob, batch_index
 
-    # to-do: profile in_queue, out_queue: queue.get consume over 90% time of beam_search
-    # use torch.multiprocessing.Process for gpu and shared memory for tensor
-    # include gpu algorithm
     def beam_search_cpu(self, att: torch.Tensor, out_beam_size: int):
         if self.pool is None:
             batch_size = att.size()[0]
             self.inner_vector = self.inner_vector.to('cpu')
             self.pool = ProcessPool(
-                self.num_workers, batch_size, self.attention_dim, SearchWorker, self.inner_vector.weight, self.tree.root, self.beam_size,
+                self.num_workers, batch_size, self.beam_size, self.attention_dim, SearchWorker, self.inner_vector.weight, self.tree.root, self.beam_size,
                 self.tree.inner_cnt, self.multilayer_leaves, self.search_emb, self.son_index)
         att = att.to('cpu')
         att = att.share_memory_()
         probs, indexs = [], []
-        # # single process method
-        # for t in att:
-        #     top_k_logp, top_k_index = self.pool.workers[0](t)
-        #     logps.append(top_k_logp)
-        #     indexs.append(top_k_index)
 
-        # accelarate ratio 2, shared memeory replace Queue may be faster
         for top_k_prob, top_k_index in self.pool.imap(att):
             probs.append(top_k_prob)
             indexs.append(top_k_index)
@@ -250,7 +238,7 @@ class SearchWorker(Worker):
             else:
                 prob *= 1. - prob_left
                 node = node.right
-        return prob, node.tokenid
+        return [prob], [node.tokenid]
 
     def __greedy_search_multilayer(self, att):
         prob, node_idx = 1., 0
@@ -262,7 +250,7 @@ class SearchWorker(Worker):
             leaf_prob, son_idx = leaf_prob.max(-1)
             prob = prob * leaf_prob
             node_idx = self.son_index[node_idx][son_idx]
-        return prob, node_idx-self.inner_cnt
+        return [prob.item()], [(node_idx-self.inner_cnt).item()]
 
     def __beam_search(self, att):
         class Candidate:

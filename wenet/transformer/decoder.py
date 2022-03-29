@@ -51,7 +51,7 @@ class TransformerDecoder(torch.nn.Module):
         normalize_before: bool = True,
         concat_after: bool = False,
         bBypassSrcAttn: bool = False,
-        mix_decode: bool = True
+        mix_decode: bool = False,
     ):
         assert check_argument_types()
         super().__init__()

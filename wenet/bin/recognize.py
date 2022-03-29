@@ -28,6 +28,21 @@ from wenet.dataset.dataset import AudioDataset, CollateFunc
 from wenet.transformer.asr_model import init_asr_model
 from wenet.utils.checkpoint import load_checkpoint
 
+
+def decode_config_prep(args, model):
+    model.decoder.mix_decode = args.mix_decode
+    if model.hsoftmax:
+        model.hsoftmax.beam_size = args.hsoftmax_beam_size
+        model.hsoftmax.multilayer_decoding = args.hsoftmax_multilayer_decoding
+
+    if args.mix_decode:
+        if model.hsoftmax:
+            model.hsoftmax = model.hsoftmax.to('cpu')
+        else:
+            model.decoder.output_layer = model.decoder.output_layer.to(
+                'cpu')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='recognize with your model')
     parser.add_argument('--config', required=True, help='config file')
@@ -42,6 +57,15 @@ if __name__ == '__main__':
                         type=int,
                         default=10,
                         help='beam size for search')
+    parser.add_argument('--hsoftmax_beam_size',
+                        type=int,
+                        default=1,
+                        help='beam size for hsoftmax tree search, 1 for greedy search')
+    parser.add_argument('--hsoftmax_multilayer_decoding',
+                        type=int,
+                        default=2,
+                        help='the number of inference layer for each iteration of hsoftmax tree search, \
+                        1 for layer by layer search. We suggest 2 or 3')
     parser.add_argument('--penalty',
                         type=float,
                         default=0.0,
@@ -101,7 +125,6 @@ if __name__ == '__main__':
     with open(args.config, 'r') as fin:
         configs = yaml.load(fin, Loader=yaml.FullLoader)
 
-    configs['decoder_conf']['mix_decode'] = args.mix_decode
     raw_wav = configs['raw_wav']
     # Init dataset and data loader
     # Init dataset and data loader
@@ -144,11 +167,7 @@ if __name__ == '__main__':
     model = model.to(device)
     model.eval()
 
-    if args.mix_decode:
-        if model.hsoftmax:
-            model.hsoftmax = model.hsoftmax.to('cpu')
-        else:
-            model.decoder.output_layer = model.decoder.output_layer.to('cpu')
+    decode_config_prep(args, model)
 
     with torch.no_grad(), open(args.result_file, 'w') as fout:
         for batch_idx, batch in enumerate(test_data_loader):
