@@ -1,15 +1,20 @@
-# hsoftmax
+# Hierarchical Softmax (HSoftmax)
 Implementation of hierarchical softmax based on Huffman tree
 
 ## Usage
-Run the script as follows:  
+1) Build Huffman tree on train set text  
+2) Train model with hierarchical softmax  
+3) Test model with hierarchical softmax  
+
+## Usage Details
+Run the script as follows to build Huffman tree:  
 ```
 python wenet/utils/huffman_tree.py \
 --train-data dir/to/format.data \
 --dict dir/to/lang_char.txt \
 --tree-save-dir dir/to/tree
 ```
-Add the following lines to train and test yaml files
+Add the following lines to train and test yaml files to enable hsoftmax
 ```
 hsoftmax:
     # the value of tree-save-dir given to huffman_tree.py
@@ -32,14 +37,9 @@ This project is based on [wenet](https://github.com/wenet-e2e/wenet).
 Please reference that for more info about running an experiment.  
 We implemented hierarchical softmax GPU/CPU training and decoding algorithm to leverage word frequence information for better performance on low-resources corpora and faster decoding speed compared to softmax.
 
-We only add and modify several files based on wenet:  
-wenet/utils/huffman_tree.py: For building a Huffman tree based on frequencies of train set  
-wenet/transformer/hsoftmax_layer.py: For GPU training and GPU/CPU decoding  
-wenet/utils/hsoftmax_processpool.py: Helper classes included for cpu parallel decoding in hsoftmax_layer.py  
-wenet/transformer/asr_model.py: Several lines are added to enable hsoftmax  
-
 ## Performance
 We reached a speedup in throughput of 4.19 in Librispeech using 10000 bpe tokens
+![result](docs/result.png)
 
-## Implementation Details
-![Implementation Details](implementation_details.jpg)
+## Core Concepts about HSoftmax GPU Training
+![Implementation Details](docs/implementation_details.png)
