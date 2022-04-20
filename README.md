@@ -37,6 +37,16 @@ This project is based on [wenet](https://github.com/wenet-e2e/wenet).
 Please reference that for more info about running an experiment.  
 We implemented hierarchical softmax GPU/CPU training and decoding algorithm to leverage word frequence information for better performance on low-resources corpora and faster decoding speed compared to softmax.
 
+## Source Code for the Paper
+``` bibtex
+@article{liu2022hsoftmax,
+  title={Hierarchical Softmax for End-to-End Low-resource Multilingual Speech Recognition},
+  author={Qianying Liu, Yuhang Yang, Zhuo Gong, Sheng Li, Chenchen Ding, Nobuaki Minematsu, Hao Huang, Fei Cheng, Sadao Kurohashi},
+  journal={arXiv preprint arXiv:2204.03855},
+  year={2022}
+}
+```
+
 ## Performance
 We reached a speedup in throughput of 4.19 in Librispeech using 10000 bpe tokens
 ![result](docs/result.png)
