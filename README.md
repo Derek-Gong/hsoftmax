@@ -1,6 +1,13 @@
 # Hierarchical Softmax (HSoftmax)
 Implementation of hierarchical softmax based on Huffman tree
 
+## Description
+This project is based on [wenet](https://github.com/wenet-e2e/wenet).
+Please reference that for more info about running an experiment.  
+To run an experiment, you need to install the wenet first (commit 15ccd07), then replace the wenet fold (source files) with ours.  
+
+We implemented hierarchical softmax GPU/CPU training and decoding algorithm to leverage word frequence information for better performance on low-resources corpora and faster decoding speed compared to softmax.
+
 ## Usage
 1) Build Huffman tree on train set text  
 2) Train model with hierarchical softmax  
@@ -32,10 +39,6 @@ Or you can specify hsoftmax decoding configs using command line arguments in rec
 --hsoftmax_beam_size 1
 --hsoftmax_multilayer_decoding 2
 ```
-## Description
-This project is based on [wenet](https://github.com/wenet-e2e/wenet).
-Please reference that for more info about running an experiment.  
-We implemented hierarchical softmax GPU/CPU training and decoding algorithm to leverage word frequence information for better performance on low-resources corpora and faster decoding speed compared to softmax.
 
 ## Source Code for the Paper
 ``` bibtex
