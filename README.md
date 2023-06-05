@@ -2,11 +2,19 @@
 Implementation of hierarchical softmax based on Huffman tree
 
 ## Description
-This project is based on [wenet](https://github.com/wenet-e2e/wenet).
-Please reference that for more info about running an experiment.  
+This project is based on [wenet](https://github.com/wenet-e2e/wenet).  
+We implemented hierarchical softmax GPU/CPU training and decoding algorithm to leverage word frequence information for better performance on low-resources corpora and faster decoding speed compared to softmax.
+
+Please refer to `wenet` for more info about how to run an experiment.  
 To run an experiment, you need to install the wenet first (commit 15ccd07), then replace the wenet fold (source files) with ours.  
 
-We implemented hierarchical softmax GPU/CPU training and decoding algorithm to leverage word frequence information for better performance on low-resources corpora and faster decoding speed compared to softmax.
+### Main Contributors 
+With the order of participating the project:
+- Qianying Liu (ying@nlp.ist.i.kyoto-u.ac.jp): Ideas and the main writer.
+- Yuhang Yang (yuhangear@gmail.com): Prototyping.
+- Zhuo Gong (gongzhuo@gavo.t.u-tokyo.ac.jp): Algorithm Optimizing and project management
+- Zhengdong Yang (zd-yang@nlp.ist.i.kyoto-u.ac.jp): Experimenting  
+
 
 ## Usage
 1) Build Huffman tree on train set text  
@@ -14,7 +22,7 @@ We implemented hierarchical softmax GPU/CPU training and decoding algorithm to l
 3) Test model with hierarchical softmax  
 
 ## Usage Details
-Run the script as follows to build Huffman tree:  
+Run the script as the following to build Huffman tree:  
 ```
 python wenet/utils/huffman_tree.py \
 --train-data dir/to/format.data \
@@ -42,11 +50,13 @@ Or you can specify hsoftmax decoding configs using command line arguments in rec
 
 ## Source Code for the Paper
 ``` bibtex
-@article{liu2022hsoftmax,
-  title={Hierarchical Softmax for End-to-End Low-resource Multilingual Speech Recognition},
-  author={Qianying Liu, Yuhang Yang, Zhuo Gong, Sheng Li, Chenchen Ding, Nobuaki Minematsu, Hao Huang, Fei Cheng, Sadao Kurohashi},
-  journal={arXiv preprint arXiv:2204.03855},
-  year={2022}
+@misc{liu2023hierarchical,
+      title={Hierarchical Softmax for End-to-End Low-resource Multilingual Speech Recognition}, 
+      author={Qianying Liu and Zhuo Gong and Zhengdong Yang and Yuhang Yang and Sheng Li and Chenchen Ding and Nobuaki Minematsu and Hao Huang and Fei Cheng and Chenhui Chu and Sadao Kurohashi},
+      year={2023},
+      eprint={2204.03855},
+      archivePrefix={arXiv},
+      primaryClass={eess.AS}
 }
 ```
 
