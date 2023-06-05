@@ -21,7 +21,7 @@ With the order of participating the project:
 2) Train model with hierarchical softmax  
 3) Test model with hierarchical softmax  
 
-## Usage Details
+### Usage Details
 Run the script as the following to build Huffman tree:  
 ```
 python wenet/utils/huffman_tree.py \
@@ -46,6 +46,24 @@ Or you can specify hsoftmax decoding configs using command line arguments in rec
 ```
 --hsoftmax_beam_size 1
 --hsoftmax_multilayer_decoding 2
+```
+
+## Implementations
+The main modifications compared to `wenet` lied in three files:
+- wenet/transformer/hsoftmax_layer.py: Training and decoding logics
+- wenet/utils/huffman_tree.py: Data preprocessing for building huffman-tree structure that's later used in hsoftmax_layer.py
+- wenet/utils/hsoftmax_processpool.py: High efficient python-native multiprocessing implementation for CPU decoding.
+
+### Main contribution in the codebase
+```
+# wenet/transformer/hsoftmax_layer.py
+
+# Implemented the forwarding algorithm described in the paper
+def forward(self, att: torch.Tensor) 
+
+# Implemented GPU beam search with multi-layer searching 
+# for high efficient decoding. Details in docs.
+def beam_search_gpu(self, att: torch.Tensor, out_beam_size: int)
 ```
 
 ## Source Code for the Paper
