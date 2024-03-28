@@ -12,6 +12,7 @@ To run an experiment, you need to install the wenet first (commit 15ccd07), then
 With the order of participating the project:
 - Qianying Liu (ying@nlp.ist.i.kyoto-u.ac.jp): Ideas and the main writer.
 - Yuhang Yang (yuhangear@gmail.com): Prototyping.
+- Sheng Li (sheng.li@nict.go.jp): Prototyping and Implementation Asisstance.
 - Zhuo Gong (gongzhuo@gavo.t.u-tokyo.ac.jp): Algorithm Optimizing and project management
 - Zhengdong Yang (zd-yang@nlp.ist.i.kyoto-u.ac.jp): Experimenting  
 
